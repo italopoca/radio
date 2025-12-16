@@ -1,12 +1,78 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RadioPlayer } from './components/RadioPlayer';
 import { Radio } from 'lucide-react';
 import { AdminPanel } from './components/AdminPanel';
 import { BroadcastStatus } from './types';
+import { supabase } from './lib/supabaseClient';
 
 const App: React.FC = () => {
   const [showAdmin, setShowAdmin] = useState(false);
   const [broadcastStatus, setBroadcastStatus] = useState<BroadcastStatus>('LIVE');
+
+  // --- GLOBAL STATE SYNCHRONIZATION ---
+  useEffect(() => {
+    // 1. Initial Fetch
+    const fetchInitialStatus = async () => {
+      const { data } = await supabase
+        .from('site_settings')
+        .select('status')
+        .eq('id', 1)
+        .single();
+      
+      if (data && (data.status === 'LIVE' || data.status === 'AUTODJ')) {
+        setBroadcastStatus(data.status as BroadcastStatus);
+      }
+    };
+    fetchInitialStatus();
+
+    // 2. Realtime Subscription (Updates status automatically without refresh)
+    const channel = supabase
+      .channel('global_settings')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'site_settings', filter: 'id=eq.1' },
+        (payload) => {
+          if (payload.new && payload.new.status) {
+             setBroadcastStatus(payload.new.status as BroadcastStatus);
+          }
+        }
+      )
+      .subscribe();
+
+    // 3. Realtime Broadcast Listener (Trigger Notifications for Users)
+    const alertChannel = supabase
+      .channel('broadcast_alerts')
+      .on(
+        'broadcast',
+        { event: 'push_notification' },
+        ({ payload }) => {
+           // Create local notification when admin sends one
+           if ("Notification" in window && Notification.permission === "granted") {
+              // Register SW if needed to show via SW (more robust on mobile)
+              if ('serviceWorker' in navigator) {
+                 navigator.serviceWorker.ready.then(registration => {
+                    registration.showNotification(payload.title, {
+                        body: payload.message,
+                        icon: payload.image || undefined,
+                        vibrate: [200, 100, 200]
+                    } as any);
+                 });
+              } else {
+                 new Notification(payload.title, {
+                     body: payload.message,
+                     icon: payload.image
+                 });
+              }
+           }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(alertChannel);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col relative overflow-hidden selection:bg-indigo-500/30">
@@ -26,7 +92,8 @@ const App: React.FC = () => {
         isOpen={showAdmin} 
         onClose={() => setShowAdmin(false)}
         currentStatus={broadcastStatus}
-        onStatusChange={setBroadcastStatus}
+        // Instead of local state set, we pass a dummy function because AdminPanel handles DB updates now
+        onStatusChange={() => {}} 
       />
 
       {/* Header */}
