@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { RadioPlayer } from './components/RadioPlayer';
 import { Radio } from 'lucide-react';
 import { AdminPanel } from './components/AdminPanel';
+import { BroadcastStatus } from './types';
 
 const App: React.FC = () => {
   const [showAdmin, setShowAdmin] = useState(false);
+  const [broadcastStatus, setBroadcastStatus] = useState<BroadcastStatus>('LIVE');
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col relative overflow-hidden selection:bg-indigo-500/30">
@@ -20,7 +22,12 @@ const App: React.FC = () => {
         ></div>
       </div>
 
-      <AdminPanel isOpen={showAdmin} onClose={() => setShowAdmin(false)} />
+      <AdminPanel 
+        isOpen={showAdmin} 
+        onClose={() => setShowAdmin(false)}
+        currentStatus={broadcastStatus}
+        onStatusChange={setBroadcastStatus}
+      />
 
       {/* Header */}
       <header className="relative z-10 p-6 flex items-center justify-between border-b border-white/5 backdrop-blur-sm">
@@ -39,14 +46,19 @@ const App: React.FC = () => {
             onClick={() => setShowAdmin(true)}
             className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full cursor-pointer hover:bg-green-500/20 transition-colors select-none"
         >
-          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-          <span className="text-xs font-medium text-green-400">Online</span>
+          <div className={`w-2 h-2 rounded-full ${broadcastStatus === 'LIVE' ? 'bg-green-500 animate-pulse' : 'bg-blue-500'}`}></div>
+          <span className={`text-xs font-medium ${broadcastStatus === 'LIVE' ? 'text-green-400' : 'text-blue-400'}`}>
+            {broadcastStatus === 'LIVE' ? 'Online' : 'Auto DJ'}
+          </span>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="flex-1 relative z-10 flex items-center justify-center p-4 sm:p-8">
-        <RadioPlayer streamUrl="https://stream.zeno.fm/o1yikowvzzwuv" />
+        <RadioPlayer 
+            streamUrl="https://stream.zeno.fm/o1yikowvzzwuv" 
+            broadcastStatus={broadcastStatus}
+        />
       </main>
 
       {/* Footer */}

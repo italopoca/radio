@@ -1,3 +1,5 @@
+export type BroadcastStatus = 'LIVE' | 'AUTODJ';
+
 export interface PlayerState {
   isPlaying: boolean;
   isLoading: boolean;
@@ -11,4 +13,5 @@ export interface PlayerState {
 
 export interface RadioPlayerProps {
   streamUrl: string;
+  broadcastStatus: BroadcastStatus;
 }

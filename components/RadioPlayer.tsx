@@ -1,12 +1,12 @@
 import React from 'react';
-import { Play, Pause, RefreshCw, Radio, Music, Share2, Disc, Bell, BellOff } from 'lucide-react';
+import { Play, Pause, RefreshCw, Radio, Music, Share2, Disc, Bell, BellOff, Mic2, Zap } from 'lucide-react';
 import { useRadio } from '../hooks/useRadio';
 import { RadioPlayerProps } from '../types';
 import Visualizer from './Visualizer';
 import VolumeControl from './VolumeControl';
 import TrackHistory from './TrackHistory';
 
-export const RadioPlayer: React.FC<RadioPlayerProps> = ({ streamUrl }) => {
+export const RadioPlayer: React.FC<RadioPlayerProps> = ({ streamUrl, broadcastStatus }) => {
   const { 
     isPlaying, 
     isLoading, 
@@ -42,6 +42,23 @@ export const RadioPlayer: React.FC<RadioPlayerProps> = ({ streamUrl }) => {
 
   const { artist, song } = getTrackDetails(currentTrack);
 
+  // Status Badge Logic
+  const isLive = broadcastStatus === 'LIVE';
+  const badgeColor = isPlaying 
+    ? (isLive ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-blue-500/10 border-blue-500/30 text-blue-400')
+    : 'bg-slate-700/50 border-slate-600/50 text-slate-400';
+
+  const badgeIcon = isPlaying ? (
+    isLive ? (
+      <span className="relative flex h-2 w-2">
+         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+         <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+      </span>
+    ) : (
+      <Zap size={10} className="text-blue-400 fill-current" />
+    )
+  ) : null;
+
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row items-start justify-center gap-8">
       
@@ -59,18 +76,9 @@ export const RadioPlayer: React.FC<RadioPlayerProps> = ({ streamUrl }) => {
           
           {/* Top Controls / Status */}
           <div className="relative p-6 flex justify-between items-start z-10">
-              <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border flex items-center gap-2 ${
-                  isPlaying 
-                  ? 'bg-red-500/10 border-red-500/30 text-red-500' 
-                  : 'bg-slate-700/50 border-slate-600/50 text-slate-400'
-              }`}>
-                  {isPlaying && (
-                      <span className="relative flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                      </span>
-                  )}
-                  {isPlaying ? 'Ao Vivo' : 'Offline'}
+              <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border flex items-center gap-2 transition-colors ${badgeColor}`}>
+                  {badgeIcon}
+                  {isPlaying ? (isLive ? 'Ao Vivo' : 'Auto DJ') : 'Offline'}
               </div>
 
               <div className="flex items-center gap-2">
@@ -104,14 +112,13 @@ export const RadioPlayer: React.FC<RadioPlayerProps> = ({ streamUrl }) => {
                           alt={`${artist} - ${song}`}
                           className="w-full h-full object-cover animate-[fadeIn_0.5s_ease-out]"
                           onError={(e) => {
-                              // Fallback if image fails
                               (e.target as HTMLImageElement).style.display = 'none';
                               (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
                           }}
                       />
                   ) : null}
                   
-                  {/* Fallback Placeholder (shown if no cover or error) */}
+                  {/* Fallback Placeholder */}
                   <div className={`absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-indigo-900 to-slate-900 ${coverUrl ? 'hidden' : ''}`}>
                       <Disc size={64} className={`text-slate-600 mb-2 ${isPlaying ? 'animate-[spin_8s_linear_infinite]' : ''}`} />
                       <span className="text-slate-500 text-xs font-medium uppercase tracking-widest">Tenda Cast</span>
@@ -165,14 +172,14 @@ export const RadioPlayer: React.FC<RadioPlayerProps> = ({ streamUrl }) => {
                       disabled={isLoading}
                       className="relative group disabled:opacity-70 disabled:cursor-not-allowed"
                   >
-                      <div className="absolute inset-0 bg-indigo-500 rounded-full blur-lg opacity-40 group-hover:opacity-60 transition-opacity"></div>
-                      <div className="relative w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg shadow-indigo-500/30 hover:scale-105 active:scale-95 transition-all duration-200">
+                      <div className={`absolute inset-0 rounded-full blur-lg opacity-40 group-hover:opacity-60 transition-opacity ${isLive ? 'bg-red-500' : 'bg-indigo-500'}`}></div>
+                      <div className="relative w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg shadow-black/20 hover:scale-105 active:scale-95 transition-all duration-200">
                           {isLoading ? (
-                              <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                              <div className={`w-6 h-6 border-2 border-t-transparent rounded-full animate-spin ${isLive ? 'border-red-600' : 'border-indigo-600'}`}></div>
                           ) : isPlaying ? (
-                              <Pause size={28} className="text-indigo-600 fill-current" />
+                              <Pause size={28} className={`fill-current ${isLive ? 'text-red-600' : 'text-indigo-600'}`} />
                           ) : (
-                              <Play size={28} className="text-indigo-600 fill-current ml-1" />
+                              <Play size={28} className={`fill-current ml-1 ${isLive ? 'text-red-600' : 'text-indigo-600'}`} />
                           )}
                       </div>
                   </button>
