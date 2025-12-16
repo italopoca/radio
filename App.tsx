@@ -25,42 +25,49 @@ const App: React.FC = () => {
     };
     fetchInitialStatus();
 
-    // 2. Realtime Subscription (Updates status automatically without refresh)
-    const channel = supabase
-      .channel('global_settings')
+    // 2. Realtime Status Sync
+    const settingsChannel = supabase
+      .channel('global_settings_sync')
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'site_settings', filter: 'id=eq.1' },
         (payload) => {
           if (payload.new && payload.new.status) {
+             console.log("Status atualizado remotamente:", payload.new.status);
              setBroadcastStatus(payload.new.status as BroadcastStatus);
           }
         }
       )
       .subscribe();
 
-    // 3. Realtime Broadcast Listener (Trigger Notifications for Users)
-    const alertChannel = supabase
-      .channel('broadcast_alerts')
+    // 3. Robust Notification System (Listens for DB Inserts)
+    // This is more reliable than ephemeral broadcasts for mobile/background stability
+    const notificationChannel = supabase
+      .channel('global_notifications_sync')
       .on(
-        'broadcast',
-        { event: 'push_notification' },
-        ({ payload }) => {
-           // Create local notification when admin sends one
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications' },
+        (payload) => {
+           const newNotif = payload.new;
+           if (!newNotif) return;
+
+           // Trigger Notification
            if ("Notification" in window && Notification.permission === "granted") {
-              // Register SW if needed to show via SW (more robust on mobile)
+              // Try Service Worker first (Better for Mobile)
               if ('serviceWorker' in navigator) {
                  navigator.serviceWorker.ready.then(registration => {
-                    registration.showNotification(payload.title, {
-                        body: payload.message,
-                        icon: payload.image || undefined,
-                        vibrate: [200, 100, 200]
+                    registration.showNotification(newNotif.title || 'Rádio Oficial', {
+                        body: newNotif.message,
+                        icon: newNotif.image || '/icon.png',
+                        vibrate: [200, 100, 200],
+                        tag: 'broadcast-' + Date.now()
                     } as any);
                  });
               } else {
-                 new Notification(payload.title, {
-                     body: payload.message,
-                     icon: payload.image
+                 // Fallback
+                 new Notification(newNotif.title || 'Rádio Oficial', {
+                     body: newNotif.message,
+                     icon: newNotif.image
                  });
               }
            }
@@ -69,14 +76,14 @@ const App: React.FC = () => {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
-      supabase.removeChannel(alertChannel);
+      supabase.removeChannel(settingsChannel);
+      supabase.removeChannel(notificationChannel);
     };
   }, []);
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col relative overflow-hidden selection:bg-indigo-500/30">
-      {/* Background Decor - Optimized with hardware acceleration */}
+      {/* Background Decor */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
         <div 
             className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-purple-600/20 rounded-full blur-[120px] will-change-transform translate-z-0"
@@ -92,8 +99,7 @@ const App: React.FC = () => {
         isOpen={showAdmin} 
         onClose={() => setShowAdmin(false)}
         currentStatus={broadcastStatus}
-        // Instead of local state set, we pass a dummy function because AdminPanel handles DB updates now
-        onStatusChange={() => {}} 
+        onStatusChange={() => {}} // Controlled via DB Realtime
       />
 
       {/* Header */}
@@ -108,7 +114,7 @@ const App: React.FC = () => {
           </div>
         </div>
         
-        {/* Secret Trigger on Click */}
+        {/* Secret Admin Trigger */}
         <div 
             onClick={() => setShowAdmin(true)}
             className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full cursor-pointer hover:bg-green-500/20 transition-colors select-none"

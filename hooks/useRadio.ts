@@ -133,9 +133,13 @@ export const useRadio = (url: string) => {
                 });
 
                 // Save to DB correctly formatted
-                await supabase
+                const { error } = await supabase
                     .from('push_subscriptions')
                     .upsert({ subscription: subscription.toJSON() }, { onConflict: 'subscription' });
+
+                if (error) {
+                    console.warn("Falha ao salvar usuário no DB (Talvez falte criar a tabela):", error);
+                }
 
                 reg.showNotification("Notificações Ativadas", { 
                     body: "Você receberá alertas da rádio!",

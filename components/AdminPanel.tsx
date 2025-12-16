@@ -99,12 +99,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
 
   // --- GLOBAL STATUS CHANGE ---
   const changeGlobalStatus = async (newStatus: BroadcastStatus) => {
-      // Optimistic update handled by Realtime in App.tsx, but we trigger DB here
-      const { error } = await supabase
-        .from('site_settings')
-        .upsert({ id: 1, status: newStatus });
-        
-      if (error) alert("Erro ao atualizar status global: " + error.message);
+      try {
+        const { error } = await supabase
+          .from('site_settings')
+          .upsert({ id: 1, status: newStatus }, { onConflict: 'id' });
+          
+        if (error) {
+            console.error("Erro DB:", error);
+            alert("Erro ao mudar status. Verifique se as tabelas foram criadas no Supabase SQL.");
+        }
+      } catch (err: any) {
+        alert("Erro: " + err.message);
+      }
   };
 
   if (!isOpen) return null;
@@ -139,7 +145,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
       setUser(null);
   };
 
-  // --- Drag & Drop logic omitted for brevity, keeping same visual logic below ---
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
   const processFile = (file: File) => {
@@ -154,32 +159,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
     if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
   };
 
-  // --- REALTIME NOTIFICATION SENDING ---
+  // --- PERSISTENT NOTIFICATION SENDING ---
   const handlePush = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('sending');
 
     try {
-        // 1. Log to DB (optional persistence)
-        await supabase.from('broadcast_logs').insert({ title, message });
+        // We INSERT into 'notifications' table.
+        // App.tsx listens to this INSERT and triggers the local notification on all connected clients.
+        const { error } = await supabase
+            .from('notifications')
+            .insert({ 
+                title, 
+                message, 
+                image: imageUrl || null
+            });
 
-        // 2. Broadcast to all online clients via Realtime
-        const channel = supabase.channel('broadcast_alerts');
-        await channel.subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') {
-                await channel.send({
-                    type: 'broadcast',
-                    event: 'push_notification',
-                    payload: { title, message, image: imageUrl }
-                });
-                
-                // Cleanup
-                supabase.removeChannel(channel);
-                setStatus('success');
-                setMessage('');
-                setTimeout(() => setStatus('idle'), 3000);
-            }
-        });
+        if (error) {
+            console.error("Notification DB Error:", error);
+            alert("Erro ao enviar notificação. Verifique as permissões da tabela 'notifications' no Supabase.");
+            setStatus('error');
+        } else {
+            setStatus('success');
+            setMessage('');
+            setTimeout(() => setStatus('idle'), 3000);
+        }
 
     } catch (err) {
         console.error("Broadcast Error:", err);
@@ -189,7 +193,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
 
   return (
     // Full screen overlay, high Z-index, no scrolling on background
-    <div className="fixed inset-0 z-[9999] bg-slate-900 flex flex-col animate-[fadeIn_0.2s_ease-out] w-full h-[100dvh]">
+    <div className="fixed inset-0 z-[9999] bg-slate-900 flex flex-col animate-[fadeIn_0.2s_ease-out] w-full h-[100dvh] overflow-hidden">
       
       {/* Header */}
       <div className="flex items-center justify-between p-4 px-6 border-b border-slate-800 bg-slate-900 flex-shrink-0 safe-area-top">
@@ -210,7 +214,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
         </button>
       </div>
 
-      <div className="flex-1 overflow-hidden relative w-full max-w-4xl mx-auto">
+      <div className="flex-1 overflow-hidden relative w-full max-w-4xl mx-auto flex flex-col">
         {!user ? (
           <div className="h-full overflow-y-auto p-6 flex flex-col items-center justify-center">
              <form onSubmit={handleLogin} className="w-full max-w-sm space-y-6">
@@ -250,7 +254,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
              </form>
           </div>
         ) : (
-          <div className="flex flex-col h-full">
+          <div className="flex flex-col h-full overflow-hidden">
               {/* User Bar */}
               <div className="flex items-center justify-between bg-slate-800/30 p-4 border-b border-slate-800 flex-shrink-0">
                   <div className="flex items-center gap-3">
@@ -344,6 +348,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
                                         <span className="font-bold">Notificação enviada com sucesso!</span>
                                     </div>
                                 )}
+                                {status === 'error' && (
+                                    <div className="p-4 bg-red-500/20 border border-red-500/30 rounded-xl flex items-center gap-3 text-red-400">
+                                        <X size={24} />
+                                        <span className="font-bold">Erro ao enviar. Verifique permissões.</span>
+                                    </div>
+                                )}
                                 
                                 <input
                                     type="text"
@@ -361,7 +371,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
                                     required
                                 />
 
-                                {/* Image Uploader (Simplified UI for space) */}
+                                {/* Image Uploader */}
                                 <div className="flex gap-2">
                                     <button
                                         type="button"
@@ -372,8 +382,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
                                         {imageUrl ? 'Alterar Imagem' : 'Adicionar Imagem'}
                                     </button>
                                     {imageUrl && (
-                                        <div className="w-12 h-12 rounded-lg bg-slate-900 border border-slate-700 overflow-hidden relative">
+                                        <div className="w-12 h-12 rounded-lg bg-slate-900 border border-slate-700 overflow-hidden relative group/img">
                                             <img src={imageUrl} className="w-full h-full object-cover" />
+                                            <button onClick={(e) => { e.stopPropagation(); setImageUrl(''); }} className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 flex items-center justify-center text-white"><Trash2 size={16}/></button>
                                         </div>
                                     )}
                                     <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => {
