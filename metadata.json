@@ -1,0 +1,5 @@
+{
+  "name": "Zeno FM Player",
+  "description": "A premium web player for Zeno FM streaming with visualizer and robust audio controls.",
+  "requestFramePermissions": []
+}
