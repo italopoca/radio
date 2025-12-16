@@ -1,8 +1,9 @@
 import React from 'react';
-import { Clock, Music2 } from 'lucide-react';
+import { Clock, Music2, Calendar } from 'lucide-react';
+import { HistoryItem } from '../types';
 
 interface TrackHistoryProps {
-  history: string[];
+  history: HistoryItem[];
 }
 
 // Simple SVG Icons
@@ -35,14 +36,6 @@ const PlatformLink: React.FC<{ url: string; name: string; icon: React.ReactNode;
 );
 
 const TrackHistory: React.FC<TrackHistoryProps> = React.memo(({ history }) => {
-  const getTrackDetails = (trackString: string) => {
-    if (trackString.includes(' - ')) {
-        const [artist, ...songParts] = trackString.split(' - ');
-        return { artist, song: songParts.join(' - ') };
-    }
-    return { artist: '', song: trackString };
-  };
-
   const getSearchLink = (platform: string, artist: string, song: string) => {
     const query = encodeURIComponent(`${artist} ${song}`);
     switch (platform) {
@@ -54,6 +47,21 @@ const TrackHistory: React.FC<TrackHistoryProps> = React.memo(({ history }) => {
     }
   };
 
+  const formatDate = (dateString: string) => {
+      const date = new Date(dateString);
+      return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+  };
+
+  // Group by Date
+  const groupedHistory = history.reduce((groups, item) => {
+    const date = formatDate(item.played_at);
+    if (!groups[date]) {
+      groups[date] = [];
+    }
+    groups[date].push(item);
+    return groups;
+  }, {} as Record<string, HistoryItem[]>);
+
   return (
     <div className="w-full max-w-md bg-slate-800/50 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[400px] md:h-[600px] transform-gpu">
       <div className="p-6 border-b border-white/5 bg-slate-900/30">
@@ -61,46 +69,53 @@ const TrackHistory: React.FC<TrackHistoryProps> = React.memo(({ history }) => {
           <Clock size={16} />
           <span className="text-xs font-bold uppercase tracking-wider">Histórico</span>
         </div>
-        <h3 className="text-lg font-bold text-white">Tocadas Recentemente</h3>
+        <h3 className="text-lg font-bold text-white">Últimas Tocadas</h3>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
         {history.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3">
             <Music2 size={32} className="opacity-20" />
             <p className="text-sm">As músicas aparecerão aqui.</p>
           </div>
         ) : (
-          history.map((track, index) => {
-            const { artist, song } = getTrackDetails(track);
-            const displayArtist = artist || 'Tenda Cast';
-
-            return (
-              <div 
-                key={`${track}-${index}`}
-                className="group flex items-center justify-between gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors border border-transparent hover:border-white/5"
-              >
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-400 group-hover:text-white group-hover:bg-indigo-500 transition-colors">
-                    {index + 1}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-200 truncate group-hover:text-white transition-colors">{song}</p>
-                    {artist && (
-                      <p className="text-xs text-slate-500 truncate group-hover:text-indigo-200 transition-colors">{artist}</p>
-                    )}
-                  </div>
+          Object.entries(groupedHistory).map(([date, items]) => (
+            <div key={date}>
+                <div className="flex items-center gap-2 mb-3 px-2">
+                    <Calendar size={12} className="text-indigo-400" />
+                    <span className="text-xs font-bold text-slate-400">{date}</span>
                 </div>
+                <div className="space-y-3">
+                    {(items as HistoryItem[]).map((track, index) => (
+                    <div 
+                        key={track.id || index}
+                        className="group flex items-center justify-between gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors border border-transparent hover:border-white/5"
+                    >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                            {/* Small Cover Art or Number */}
+                            {track.cover_url ? (
+                                <img src={track.cover_url} alt="" className="w-10 h-10 rounded-lg object-cover bg-slate-800" />
+                            ) : (
+                                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-400 group-hover:text-white group-hover:bg-indigo-500 transition-colors">
+                                    <Music2 size={16} />
+                                </div>
+                            )}
+                            
+                            <div className="min-w-0">
+                                <p className="text-sm font-medium text-slate-200 truncate group-hover:text-white transition-colors">{track.song}</p>
+                                <p className="text-xs text-slate-500 truncate group-hover:text-indigo-200 transition-colors">{track.artist || 'Tenda Cast'}</p>
+                            </div>
+                        </div>
 
-                <div className="flex items-center gap-2">
-                    <PlatformLink url={getSearchLink('spotify', displayArtist, song)} name="Spotify" icon={<SpotifyIcon />} hoverColor="hover:text-[#1DB954]" />
-                    <PlatformLink url={getSearchLink('youtube', displayArtist, song)} name="YouTube Music" icon={<YoutubeMusicIcon />} hoverColor="hover:text-red-500" />
-                    <PlatformLink url={getSearchLink('apple', displayArtist, song)} name="Apple Music" icon={<AppleMusicIcon />} hoverColor="hover:text-pink-500" />
-                    <PlatformLink url={getSearchLink('deezer', displayArtist, song)} name="Deezer" icon={<DeezerIcon />} hoverColor="hover:text-purple-400" />
+                        <div className="flex items-center gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
+                            <PlatformLink url={getSearchLink('spotify', track.artist, track.song)} name="Spotify" icon={<SpotifyIcon />} hoverColor="hover:text-[#1DB954]" />
+                            <PlatformLink url={getSearchLink('youtube', track.artist, track.song)} name="YouTube" icon={<YoutubeMusicIcon />} hoverColor="hover:text-red-500" />
+                        </div>
+                    </div>
+                    ))}
                 </div>
-              </div>
-            );
-          })
+            </div>
+          ))
         )}
       </div>
     </div>
