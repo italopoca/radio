@@ -12,7 +12,7 @@ export const useRadio = (url: string) => {
   const [state, setState] = useState<PlayerState>({
     isPlaying: false,
     isLoading: true,
-    volume: 0.5, // Começa em 50%
+    volume: 0.5,
     error: null,
     currentTrack: "Conectando...",
     history: [],
@@ -81,27 +81,25 @@ export const useRadio = (url: string) => {
   useEffect(() => {
     let isMounted = true;
     
-    // 1. Setup Audio Object
+    // 1. Setup Audio Object optimized for mobile
     const audio = new Audio();
     audio.src = url;
-    audio.crossOrigin = "anonymous"; // Necessário para visualizador
+    audio.crossOrigin = "anonymous";
     audio.preload = "auto";
-    audio.volume = state.volume; // Set initial volume
+    audio.volume = state.volume;
     
-    // Referência global imediata
     audioRef.current = audio;
 
-    // 2. Define Context Initializer (Lazy Load)
-    // We do NOT call this immediately. We wait for the audio to actually start playing.
-    // This prevents "Silent Autoplay" issues where AudioContext starts suspended.
+    // 2. Lazy Audio Context (Performance & Stability)
     const initAudioContext = () => {
-      if (audioContextRef.current) return; // Already exists
+      if (audioContextRef.current) return;
 
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioContextClass) {
         const ctx = new AudioContextClass();
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 64; 
+        analyser.smoothingTimeConstant = 0.8; // Smoother visuals
         
         try {
           const source = ctx.createMediaElementSource(audio);
@@ -112,12 +110,12 @@ export const useRadio = (url: string) => {
           analyserRef.current = analyser;
           sourceRef.current = source;
         } catch (e) {
-          console.warn("Visualizer setup warning (CORS restricted?)", e);
+          console.warn("Visualizer setup warning", e);
         }
       }
     };
 
-    // 3. Event Handlers
+    // 3. Optimized Event Handlers
     const handleLoadStart = () => {
         if(isMounted) setState(s => ({ ...s, isLoading: true, error: null }));
     };
@@ -129,8 +127,6 @@ export const useRadio = (url: string) => {
     const handlePlaying = () => {
         if(isMounted) {
             setState(s => ({ ...s, isPlaying: true, isLoading: false, error: null }));
-            
-            // NOW we initialize/resume the visualizer, ensuring audio is already flowing
             initAudioContext();
             if (audioContextRef.current?.state === 'suspended') {
                 audioContextRef.current.resume().catch(() => {});
@@ -145,83 +141,85 @@ export const useRadio = (url: string) => {
     const handleError = (e: Event) => {
         if(!isMounted) return;
         const target = e.target as HTMLAudioElement;
+        // Ignore AbortError (happens when switching streams/pausing rapidly)
         if (target.error && target.error.code !== target.error.MEDIA_ERR_ABORTED) {
             console.error("Audio Error:", target.error);
             setState(s => ({ 
                 ...s, 
                 isPlaying: false, 
                 isLoading: false, 
-                error: "Clique no Play." 
+                error: "Toque para iniciar" 
             }));
         }
     };
     
-    // Add Listeners
     audio.addEventListener('loadstart', handleLoadStart);
     audio.addEventListener('canplay', handleCanPlay);
     audio.addEventListener('playing', handlePlaying);
     audio.addEventListener('pause', handlePause);
     audio.addEventListener('error', handleError);
 
-    // 4. Force Autoplay
+    // 4. SIMPLE AUTOPLAY ATTEMPT (No global interaction fallback)
     const startPlayback = async () => {
         try {
             await audio.play();
         } catch (error) {
-            console.log("Autoplay blocked by browser. User interaction needed.");
+            console.log("Autoplay blocked by browser policy.");
+            // Just stop loading state so user sees the play button
             if (isMounted) setState(s => ({ ...s, isPlaying: false, isLoading: false }));
         }
     };
+
+    // Attempt immediately
     startPlayback();
 
-    // 5. Metadata Logic
+    // 5. Metadata Logic (Optimized)
     let eventSource: EventSource | null = null;
     try {
         const mountKey = getMountKey(url);
         eventSource = new EventSource(`https://api.zeno.fm/mounts/metadata/subscribe/${mountKey}`);
         
         eventSource.onmessage = async (e) => {
-            if (!isMounted) return;
-            if (e.data) {
-                try {
-                    const data = JSON.parse(e.data);
-                    const newTitle = data.streamTitle;
+            if (!isMounted || !e.data) return;
+            try {
+                const data = JSON.parse(e.data);
+                const newTitle = data.streamTitle;
 
-                    if (newTitle && newTitle !== currentTrackRef.current) {
-                        const previousTrack = currentTrackRef.current;
-                        
+                if (newTitle && newTitle !== currentTrackRef.current) {
+                    const previousTrack = currentTrackRef.current;
+                    currentTrackRef.current = newTitle; // Update ref immediately
+
+                    // Fetch art in parallel
+                    let artUrl = data.image || null;
+                    if (!artUrl && newTitle !== "Rádio Ao Vivo") {
+                        artUrl = await fetchCoverArt(newTitle);
+                    }
+
+                    if (isMounted) {
                         setState(s => {
                             let newHistory = s.history;
                             if (previousTrack !== "Conectando..." && previousTrack !== "Rádio Ao Vivo") {
-                                newHistory = [previousTrack, ...s.history].slice(0, 10);
+                                // Append to history (Chronological order)
+                                newHistory = [...s.history, previousTrack];
                             }
                             return { 
                                 ...s, 
                                 currentTrack: newTitle,
-                                history: newHistory
+                                history: newHistory,
+                                coverUrl: artUrl
                             };
                         });
-
-                        currentTrackRef.current = newTitle;
-
-                        let artUrl = data.image || null;
-                        if (!artUrl && newTitle !== "Rádio Ao Vivo") {
-                            artUrl = await fetchCoverArt(newTitle);
-                        }
-
-                        if(isMounted) setState(s => ({ ...s, coverUrl: artUrl }));
                     }
-                } catch (jsonErr) {}
-            }
+                }
+            } catch (jsonErr) {}
         };
-    } catch (err) {
-        // Silent catch
-    }
+    } catch (err) {}
 
     return () => {
       isMounted = false;
       audio.pause();
       audio.src = "";
+      
       audio.removeEventListener('loadstart', handleLoadStart);
       audio.removeEventListener('canplay', handleCanPlay);
       audio.removeEventListener('playing', handlePlaying);
@@ -236,7 +234,6 @@ export const useRadio = (url: string) => {
   const togglePlay = useCallback(async () => {
     if (!audioRef.current) return;
 
-    // Critical: Resume context on user interaction if it was suspended
     if (audioContextRef.current?.state === 'suspended') {
         audioContextRef.current.resume().catch(() => {});
     }
@@ -251,7 +248,6 @@ export const useRadio = (url: string) => {
       } catch (error) {
           console.error("Play retry failed", error);
           setState(s => ({ ...s, isLoading: false, isPlaying: false }));
-          // Fallback: force reload
           audioRef.current.load();
           audioRef.current.play().catch(() => {});
       }
