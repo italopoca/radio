@@ -13,14 +13,18 @@ const App: React.FC = () => {
   useEffect(() => {
     // 1. Initial Fetch
     const fetchInitialStatus = async () => {
-      const { data } = await supabase
-        .from('site_settings')
-        .select('status')
-        .eq('id', 1)
-        .single();
-      
-      if (data && (data.status === 'LIVE' || data.status === 'AUTODJ')) {
-        setBroadcastStatus(data.status as BroadcastStatus);
+      try {
+        const { data } = await supabase
+          .from('site_settings')
+          .select('status')
+          .eq('id', 1)
+          .single();
+        
+        if (data && (data.status === 'LIVE' || data.status === 'AUTODJ')) {
+          setBroadcastStatus(data.status as BroadcastStatus);
+        }
+      } catch (err) {
+        console.error("Error fetching initial status:", err);
       }
     };
     fetchInitialStatus();
@@ -41,7 +45,6 @@ const App: React.FC = () => {
       .subscribe();
 
     // 3. Robust Notification System (Listens for DB Inserts)
-    // This is more reliable than ephemeral broadcasts for mobile/background stability
     const notificationChannel = supabase
       .channel('global_notifications_sync')
       .on(
@@ -51,7 +54,16 @@ const App: React.FC = () => {
            const newNotif = payload.new;
            if (!newNotif) return;
 
-           // Trigger Notification
+           console.log("Nova notificação recebida:", newNotif);
+
+           // Play Sound Alert (Ensure user hears it)
+           try {
+             const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+             audio.volume = 0.5;
+             audio.play().catch(e => console.log("Audio play prevented:", e));
+           } catch(e) {}
+
+           // Trigger Visual Notification
            if ("Notification" in window && Notification.permission === "granted") {
               // Try Service Worker first (Better for Mobile)
               if ('serviceWorker' in navigator) {
@@ -60,8 +72,15 @@ const App: React.FC = () => {
                         body: newNotif.message,
                         icon: newNotif.image || '/icon.png',
                         vibrate: [200, 100, 200],
-                        tag: 'broadcast-' + Date.now()
+                        tag: 'broadcast-' + Date.now(),
+                        requireInteraction: true // Keeps notification on screen until clicked
                     } as any);
+                 }).catch(err => {
+                    console.error("SW Notification failed, falling back", err);
+                    new Notification(newNotif.title || 'Rádio Oficial', {
+                        body: newNotif.message,
+                        icon: newNotif.image
+                    });
                  });
               } else {
                  // Fallback

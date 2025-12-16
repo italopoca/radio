@@ -34,7 +34,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
   // Broadcast Form State
   const [message, setMessage] = useState('');
   const [title, setTitle] = useState('Aviso da Rádio');
-  const [imageMode, setImageMode] = useState<TabMode>('url');
   const [imageUrl, setImageUrl] = useState(''); 
   const [fileName, setFileName] = useState('');
   
@@ -100,16 +99,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
   // --- GLOBAL STATUS CHANGE ---
   const changeGlobalStatus = async (newStatus: BroadcastStatus) => {
       try {
+        // We use UPSERT to ensure it works even if ID 1 doesn't exist yet
         const { error } = await supabase
           .from('site_settings')
           .upsert({ id: 1, status: newStatus }, { onConflict: 'id' });
           
         if (error) {
-            console.error("Erro DB:", error);
-            alert("Erro ao mudar status. Verifique se as tabelas foram criadas no Supabase SQL.");
+            console.error("Erro DB Status:", error);
+            alert("Erro ao mudar status: " + error.message + ". Verifique se criou a tabela 'site_settings'.");
+        } else {
+            console.log("Status mudado para", newStatus);
         }
       } catch (err: any) {
-        alert("Erro: " + err.message);
+        alert("Erro crítico: " + err.message);
       }
   };
 
@@ -145,18 +147,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
       setUser(null);
   };
 
-  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
-  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
   const processFile = (file: File) => {
     if (!file.type.startsWith('image/')) return;
     setFileName(file.name);
     const reader = new FileReader();
     reader.onloadend = () => setImageUrl(reader.result as string);
     reader.readAsDataURL(file);
-  };
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault(); setIsDragging(false);
-    if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
   };
 
   // --- PERSISTENT NOTIFICATION SENDING ---
@@ -177,7 +173,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose, current
 
         if (error) {
             console.error("Notification DB Error:", error);
-            alert("Erro ao enviar notificação. Verifique as permissões da tabela 'notifications' no Supabase.");
+            alert("Erro ao enviar. Verifique permissões da tabela 'notifications'. Detalhes no console.");
             setStatus('error');
         } else {
             setStatus('success');

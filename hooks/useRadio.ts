@@ -1,22 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { PlayerState, HistoryItem } from '../types';
-import { supabase, VAPID_PUBLIC_KEY } from '../lib/supabaseClient';
-
-// Helper to convert VAPID key
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding)
-    .replace(/\-/g, '+')
-    .replace(/_/g, '/');
- 
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
- 
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
+import { supabase } from '../lib/supabaseClient';
 
 export const useRadio = (url: string) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -108,7 +92,7 @@ export const useRadio = (url: string) => {
 
   const toggleNotifications = useCallback(async () => {
     if (state.notificationsEnabled) {
-      // Just visually disable, cannot revoke browser perm programmatically easily
+      // Just visually disable (we can't programmatically revoke permission in browser)
       setState(s => ({ ...s, notificationsEnabled: false }));
     } else {
       if (!("Notification" in window)) {
@@ -116,45 +100,30 @@ export const useRadio = (url: string) => {
         return;
       }
       
-      const permission = await Notification.requestPermission();
-      
-      if (permission === "granted") {
-        setState(s => ({ ...s, notificationsEnabled: true }));
-        
-        // --- SUBSCRIBE FOR PUSH (DATA COLLECTION) ---
-        if ('serviceWorker' in navigator) {
-            try {
-                const reg = await navigator.serviceWorker.ready;
-                const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-                
-                const subscription = await reg.pushManager.subscribe({
-                    userVisibleOnly: true,
-                    applicationServerKey: applicationServerKey
+      try {
+          const permission = await Notification.requestPermission();
+          
+          if (permission === "granted") {
+            setState(s => ({ ...s, notificationsEnabled: true }));
+            
+            // Show a test notification immediately to confirm it works
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.ready.then(reg => {
+                    reg.showNotification("Notificações Ativadas", { 
+                        body: "Você receberá alertas da rádio aqui!",
+                        icon: '/icon.png',
+                        vibrate: [200, 100, 200]
+                    } as any);
                 });
-
-                // Save to DB correctly formatted
-                const { error } = await supabase
-                    .from('push_subscriptions')
-                    .upsert({ subscription: subscription.toJSON() }, { onConflict: 'subscription' });
-
-                if (error) {
-                    console.warn("Falha ao salvar usuário no DB (Talvez falte criar a tabela):", error);
-                }
-
-                reg.showNotification("Notificações Ativadas", { 
-                    body: "Você receberá alertas da rádio!",
-                    icon: '/icon.png',
-                    vibrate: [100, 50, 100]
-                } as any);
-
-            } catch (err) {
-                console.error("Push Sub Error:", err);
-                // Fallback
-                new Notification("Notificações Ativadas", { body: "Alertas ativados." });
+            } else {
+                new Notification("Notificações Ativadas", { body: "Você receberá alertas da rádio aqui!" });
             }
-        }
-      } else {
-        alert("Permissão necessária para notificações.");
+          } else {
+            alert("Você precisa permitir notificações nas configurações do navegador.");
+          }
+      } catch (error) {
+          console.error("Erro ao solicitar notificação", error);
+          alert("Erro ao ativar notificações.");
       }
     }
   }, [state.notificationsEnabled]);
